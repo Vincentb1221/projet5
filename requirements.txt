@@ -3,6 +3,3 @@ pandas
 matplotlib
 yfinance
 numpy
-altair
-fpdf
-requests
