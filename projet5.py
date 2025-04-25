@@ -5,6 +5,7 @@ import yfinance as yf
 import numpy as np
 from datetime import date, timedelta
 import random
+import plotly.graph_objects as go
 
 # Configuration de la page Streamlit
 st.set_page_config(page_title="Conseiller Financier Virtuel", layout="wide")
@@ -20,20 +21,29 @@ tickers = {
     "US 10Y": "^TNX"
 }
 
-# Données en temps réel
-data = yf.download(list(tickers.values()), period="1d", interval="1m", progress=False)
-latest_data = data["Close"].iloc[-1]
-previous_data = data["Close"].iloc[-2]
+# Données en temps réel - version plus robuste
+try:
+    data = yf.download(list(tickers.values()), period="1d", interval="5m", progress=False, threads=False)
+    latest_data = data["Close"].iloc[-1]
+    previous_data = data["Close"].iloc[-2]
 
-# Affichage avec st.metric
-st.subheader("📊 Marchés en temps réel")
-cols = st.columns(len(tickers))
+    st.subheader("📊 Marchés en temps réel")
+    cols = st.columns(len(tickers))
 
-for i, (name, symbol) in enumerate(tickers.items()):
-    latest = latest_data[symbol]
-    previous = previous_data[symbol]
-    delta = round(((latest - previous) / previous) * 100, 2)
-    cols[i].metric(label=name, value=f"${latest:,.2f}", delta=f"{delta}%")
+    for i, (name, symbol) in enumerate(tickers.items()):
+        try:
+            latest = latest_data[symbol]
+            previous = previous_data[symbol]
+            if pd.notna(latest) and pd.notna(previous):
+                delta = round(((latest - previous) / previous) * 100, 2)
+                cols[i].metric(label=name, value=f"${latest:,.2f}", delta=f"{delta}%")
+            else:
+                cols[i].metric(label=name, value="N/A", delta="N/A")
+        except Exception:
+            cols[i].metric(label=name, value="Erreur", delta="")
+
+except Exception as e:
+    st.error(f"Erreur lors de la récupération des données financières : {e}")
 
 # Variables par défaut pour éviter les erreurs si le formulaire n'est pas soumis
 age = 30
@@ -312,91 +322,103 @@ with tabs[5]:
 
 # 7. Analyse Technique
 with tabs[6]:
-    st.header("\U0001F4C9 Analyse Technique")
+    st.header("📉 Analyse Technique")
 
     st.info("Sélectionnez un actif et une plage de dates pour afficher son graphique technique.")
 
-    sp500_df = pd.read_csv("tickers_sp500.csv")
+    try:
+        sp500_df = pd.read_csv("tickers_sp500.csv")
+        ticker = st.selectbox("Choisissez un ticker", sp500_df.squeeze().tolist())
+    except Exception as e:
+        st.error(f"Erreur lors du chargement des tickers : {e}")
+        st.stop()
 
-    # Sélection de l'actif
-    ticker = st.selectbox("Choisissez un ticker", sp500_df)
-
-    # Sélection de la période
     col1, col2 = st.columns(2)
     with col1:
         start_date = st.date_input("Date de début", date.today() - timedelta(days=180))
     with col2:
         end_date = st.date_input("Date de fin", date.today())
 
-   # Indicateurs techniques à afficher
     show_sma = st.checkbox("Afficher la moyenne mobile (SMA 20)", value=True)
     show_rsi = st.checkbox("Afficher le RSI (14)")
     show_macd = st.checkbox("Afficher le MACD")
 
     if start_date < end_date:
         df = yf.download(ticker, start=start_date, end=end_date)
-
         if not df.empty:
             df['SMA20'] = df['Close'].rolling(window=20).mean()
 
-            # RSI (14 jours)
-            delta = df['Close'].diff()
-            gain = np.where(delta > 0, delta, 0)
-            loss = np.where(delta < 0, -delta, 0)
-            avg_gain = pd.Series(gain).rolling(window=14).mean()
-            avg_loss = pd.Series(loss).rolling(window=14).mean()
-            rs = avg_gain / avg_loss
-            df['RSI'] = 100 - (100 / (1 + rs))
+            # RSI
+            try:
+                delta = df['Close'].diff()
+                gain = delta.copy()
+                gain[delta < 0] = 0
+                loss = -delta.copy()
+                loss[delta > 0] = 0
+                avg_gain = gain.rolling(window=14).mean()
+                avg_loss = loss.rolling(window=14).mean()
+                rs = avg_gain / avg_loss
+                df['RSI'] = 100 - (100 / (1 + rs))
+            except Exception as e:
+                st.warning(f"RSI non calculé : {e}")
 
             # MACD
-            ema12 = df['Close'].ewm(span=12, adjust=False).mean()
-            ema26 = df['Close'].ewm(span=26, adjust=False).mean()
-            df['MACD'] = ema12 - ema26
+            df['EMA12'] = df['Close'].ewm(span=12, adjust=False).mean()
+            df['EMA26'] = df['Close'].ewm(span=26, adjust=False).mean()
+            df['MACD'] = df['EMA12'] - df['EMA26']
             df['Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
 
-            # Graphique principal : chandeliers + SMA + volume
-            fig = plt.Figure()
-            fig.add_trace(plt.Candlestick(x=df.index,
-                                         open=df['Open'], high=df['High'],
-                                         low=df['Low'], close=df['Close'],
-                                         name='Prix'))
+            # Graphique principal
+            fig = go.Figure()
+
+            fig.add_trace(go.Candlestick(
+                x=df.index,
+                open=df['Open'], high=df['High'],
+                low=df['Low'], close=df['Close'],
+                name='Chandeliers'
+            ))
 
             if show_sma:
-                fig.add_trace(plt.Scatter(x=df.index, y=df['SMA20'],
-                                         line=dict(color='blue', width=1),
-                                         name='SMA 20'))
+                fig.add_trace(go.Scatter(
+                    x=df.index, y=df['SMA20'],
+                    line=dict(color='blue', width=1),
+                    name='SMA 20'
+                ))
 
-            fig.add_trace(plt.Bar(x=df.index, y=df['Volume'], name='Volume',
-                                 yaxis='y2', marker_opacity=0.3))
+            fig.add_trace(go.Bar(
+                x=df.index, y=df['Volume'],
+                name='Volume',
+                marker_opacity=0.3,
+                yaxis='y2'
+            ))
 
             fig.update_layout(
                 title=f"Graphique de {ticker} - Chandeliers & Indicateurs",
                 xaxis_rangeslider_visible=False,
-                yaxis_title="Prix ($)",
+                yaxis=dict(title="Prix ($)"),
                 yaxis2=dict(title="Volume", overlaying='y', side='right', showgrid=False),
                 height=600
             )
 
             st.plotly_chart(fig, use_container_width=True)
 
-            # RSI
-            if show_rsi:
-                rsi_fig = plt.Figure()
-                rsi_fig.add_trace(plt.Scatter(x=df.index, y=df['RSI'],
-                                             line=dict(color='orange'), name='RSI'))
+            # RSI Chart
+            if show_rsi and 'RSI' in df:
+                rsi_fig = go.Figure()
+                rsi_fig.add_trace(go.Scatter(
+                    x=df.index, y=df['RSI'],
+                    line=dict(color='orange'), name='RSI'
+                ))
                 rsi_fig.update_layout(title="RSI (14)", yaxis_range=[0, 100], height=200)
                 st.plotly_chart(rsi_fig, use_container_width=True)
 
-            # MACD
+            # MACD Chart
             if show_macd:
-                macd_fig = plt.Figure()
-                macd_fig.add_trace(plt.Scatter(x=df.index, y=df['MACD'],
-                                              line=dict(color='green'), name='MACD'))
-                macd_fig.add_trace(plt.Scatter(x=df.index, y=df['Signal'],
-                                              line=dict(color='red'), name='Signal'))
+                macd_fig = go.Figure()
+                macd_fig.add_trace(go.Scatter(x=df.index, y=df['MACD'], name="MACD", line=dict(color="green")))
+                macd_fig.add_trace(go.Scatter(x=df.index, y=df['Signal'], name="Signal", line=dict(color="red")))
                 macd_fig.update_layout(title="MACD", height=200)
                 st.plotly_chart(macd_fig, use_container_width=True)
-
         else:
             st.warning("Aucune donnée disponible pour cette période.")
     else:
