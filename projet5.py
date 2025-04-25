@@ -267,7 +267,7 @@ with tabs[4]:
     st.header("📊 Recherche d'Actions")
 
     # Liste des 500 actions du S&P500
-    sp500_df = pd.read_csv("sp500_tickers.csv")
+    sp500_df = pd.read_csv("tickers_sp500.csv")
        
     col1, col2 = st.columns(2)
     with col1:
@@ -316,7 +316,7 @@ with tabs[6]:
 
     st.info("Sélectionnez un actif et une plage de dates pour afficher son graphique technique.")
 
-    sp500_df = pd.read_csv("sp500_tickers.csv")
+    sp500_df = pd.read_csv("tickers_sp500.csv")
 
     # Sélection de l'actif
     ticker = st.selectbox("Choisissez un ticker", sp500_df)
