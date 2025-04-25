@@ -4,7 +4,6 @@ import matplotlib.pyplot as plt
 import yfinance as yf
 import numpy as np
 from datetime import date, timedelta
-import random
 import plotly.graph_objects as go
 
 # Configuration de la page Streamlit
@@ -217,6 +216,8 @@ with tabs[1]:
     if horizon_liquidite == "Oui":
         explication.append("Comme vous avez besoin de liquidités à court terme, une part plus importante a été allouée à des actifs très accessibles.")
 
+    st.markdown("<br>".join(explication), unsafe_allow_html=True)
+
 # 3. Simulateur de Rendement
 with tabs[2]:
     st.header("📈 Simulateur de Rendement")
@@ -232,37 +233,41 @@ with tabs[2]:
 
 # 4. Comparateur de Fonds
 with tabs[3]:
-    st.header("🔍 Comparateur de Fonds")
+    # Charger les tickers depuis le fichier CSV
+    fnb_df = pd.read_csv("fnb_americains.csv")
+    tickers = fnb_df["ticker"].tolist()
 
-    # Liste de tickers populaires (à enrichir si besoin)
-    tickers = ["VEQT.TO", "XEQT.TO", "VCNS.TO", "VGRO.TO", "ZBAL.TO", "XGRO.TO", "ZCN.TO", "VXUS.TO", "BND.TO", "QQQ,TO", "BNDX.TO", "VTIP.TO","IXUS.TO", "TLT.TO", "IBIT.TO"]
+    # Section Streamlit
+    st.header("🔍 Comparateur de FNB Américains")
 
     col1, col2 = st.columns(2)
     with col1:
-        fond1 = st.selectbox("Choisir le premier fonds", tickers, key="fond1")
+        fond1 = st.selectbox("Choisir le premier FNB", tickers, key="fond1")
     with col2:
-        fond2 = st.selectbox("Choisir le deuxième fonds", tickers, key="fond2", index=1)
+        fond2 = st.selectbox("Choisir le deuxième FNB", tickers, key="fond2", index=1)
 
-    # Fonction pour extraire les données utiles
+    # Fonction pour extraire les données financières de base
     def extraire_infos(ticker):
         try:
             fnb = yf.Ticker(ticker)
             info = fnb.info
+
             return {
                 "Nom complet": info.get("longName", "N/A"),
                 "Symbole": info.get("symbol", "N/A"),
                 "Catégorie": info.get("category", "N/A"),
-                "Frais de gestion": f"{info.get('expenseRatio', 0)*100:.2f}%" if info.get("expenseRatio") else "N/A",
-                "Actif net (M$)": f"{info.get('totalAssets', 0)/1e6:.2f}" if info.get("totalAssets") else "N/A",
-                "Rendement sur 1 an (%)": f"{info.get('threeYearAverageReturn', 0)*100:.2f}%" if info.get("threeYearAverageReturn") else "N/A",
+                "Frais de gestion (%)": f"{info.get('expenseRatio', 0) * 100:.2f}%" if info.get('expenseRatio') else "N/A",
+                "Actif net (G$)": f"{info.get('totalAssets', 0) / 1e9:.2f}" if info.get('totalAssets') else "N/A",
+                "Rendement 1 an (%)": f"{info.get('threeYearAverageReturn', 0) * 100:.2f}%" if info.get('threeYearAverageReturn') else "N/A",
             }
-        except:
-            return {"Nom complet": "Erreur de récupération", "Symbole": ticker}
+        except Exception as e:
+            return {"Nom complet": "Erreur", "Symbole": ticker}
 
+    # Extraire les infos pour chaque fonds sélectionné
     data_fond1 = extraire_infos(fond1)
     data_fond2 = extraire_infos(fond2)
 
-    # Construction du tableau comparatif
+    # Créer un tableau comparatif
     comparaison = pd.DataFrame({
         "Paramètre": list(data_fond1.keys()),
         fond1: list(data_fond1.values()),
@@ -300,8 +305,8 @@ with tabs[4]:
             st.write(f"🔍 Description : {info.get('longBusinessSummary', 'N/A')}")
 
             # Affichage du graphique de l’évolution des prix
-            fig = plt.Figure()
-            fig.add_trace(plt.Scatter(x=hist.index, y=hist["Close"], mode="lines", name="Prix de clôture"))
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=hist.index, y=hist["Close"], mode="lines", name="Prix de clôture"))
             fig.update_layout(title=f"Évolution du prix - {ticker}", xaxis_title="Date", yaxis_title="Prix ($)", height=400)
             st.plotly_chart(fig, use_container_width=True)
 
@@ -345,10 +350,11 @@ with tabs[6]:
 
     if start_date < end_date:
         df = yf.download(ticker, start=start_date, end=end_date)
+
         if not df.empty:
+            # Calcul des indicateurs techniques
             df['SMA20'] = df['Close'].rolling(window=20).mean()
 
-            # RSI
             try:
                 delta = df['Close'].diff()
                 gain = delta.copy()
@@ -362,15 +368,15 @@ with tabs[6]:
             except Exception as e:
                 st.warning(f"RSI non calculé : {e}")
 
-            # MACD
             df['EMA12'] = df['Close'].ewm(span=12, adjust=False).mean()
             df['EMA26'] = df['Close'].ewm(span=26, adjust=False).mean()
             df['MACD'] = df['EMA12'] - df['EMA26']
             df['Signal'] = df['MACD'].ewm(span=9, adjust=False).mean()
 
-            # Graphique principal
+            # --------- GRAPHIQUE PRINCIPAL -----------
             fig = go.Figure()
 
+            # Ajout des chandeliers toujours
             fig.add_trace(go.Candlestick(
                 x=df.index,
                 open=df['Open'], high=df['High'],
@@ -378,6 +384,7 @@ with tabs[6]:
                 name='Chandeliers'
             ))
 
+            # Ajout conditionnel de la SMA
             if show_sma:
                 fig.add_trace(go.Scatter(
                     x=df.index, y=df['SMA20'],
@@ -385,6 +392,7 @@ with tabs[6]:
                     name='SMA 20'
                 ))
 
+            # Ajout du volume (toujours pour embellir)
             fig.add_trace(go.Bar(
                 x=df.index, y=df['Volume'],
                 name='Volume',
@@ -392,6 +400,7 @@ with tabs[6]:
                 yaxis='y2'
             ))
 
+            # Layout
             fig.update_layout(
                 title=f"Graphique de {ticker} - Chandeliers & Indicateurs",
                 xaxis_rangeslider_visible=False,
@@ -402,7 +411,7 @@ with tabs[6]:
 
             st.plotly_chart(fig, use_container_width=True)
 
-            # RSI Chart
+            # --------- GRAPHIQUE RSI -----------
             if show_rsi and 'RSI' in df:
                 rsi_fig = go.Figure()
                 rsi_fig.add_trace(go.Scatter(
@@ -412,13 +421,14 @@ with tabs[6]:
                 rsi_fig.update_layout(title="RSI (14)", yaxis_range=[0, 100], height=200)
                 st.plotly_chart(rsi_fig, use_container_width=True)
 
-            # MACD Chart
+            # --------- GRAPHIQUE MACD -----------
             if show_macd:
                 macd_fig = go.Figure()
                 macd_fig.add_trace(go.Scatter(x=df.index, y=df['MACD'], name="MACD", line=dict(color="green")))
                 macd_fig.add_trace(go.Scatter(x=df.index, y=df['Signal'], name="Signal", line=dict(color="red")))
                 macd_fig.update_layout(title="MACD", height=200)
                 st.plotly_chart(macd_fig, use_container_width=True)
+
         else:
             st.warning("Aucune donnée disponible pour cette période.")
     else:
@@ -530,11 +540,9 @@ with tabs[10]:
         }
     ]
 
-    # Mélange des questions
-    selected_questions = random.sample(questions, len(questions))
     correct_answers = 0
 
-    for i, q in enumerate(selected_questions):
+    for i, q in enumerate(questions):
         st.subheader(f"Question {i+1}")
         response = st.radio(q["question"], q["options"], key=f"q{i}")
 
@@ -545,8 +553,8 @@ with tabs[10]:
             else:
                 st.error(f"Mauvaise réponse. La bonne réponse est : {q['answer']}")
 
-    if len(selected_questions) > 0:
-        st.markdown(f"### Résultat : {correct_answers} / {len(selected_questions)} bonnes réponses")
+    if len(questions) > 0:
+        st.markdown(f"### Résultat : {correct_answers} / {len(questions)} bonnes réponses")
 
 # 12. Cryptomonnaie
 with tabs[11]:
