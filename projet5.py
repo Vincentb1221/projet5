@@ -510,7 +510,7 @@ with tabs[9]:
 
 # 11. Quiz Financier
 with tabs[10]:
-    st.header("\U0001F9E0 Quiz Financier")
+    st.header("🧠 Quiz Financier")
 
     questions = [
         {
@@ -540,21 +540,30 @@ with tabs[10]:
         }
     ]
 
-    correct_answers = 0
+    st.info("Répondez aux questions puis cliquez sur 'Soumettre le quiz' pour voir votre résultat.")
 
+    user_answers = {}
+
+    # Afficher toutes les questions sans corriger tout de suite
     for i, q in enumerate(questions):
-        st.subheader(f"Question {i+1}")
-        response = st.radio(q["question"], q["options"], key=f"q{i}")
+        user_answers[i] = st.radio(q["question"], q["options"], key=f"q{i}")
 
-        if st.button(f"Valider la réponse à la question {i+1}", key=f"validate{i}"):
-            if response == q["answer"]:
-                st.success("Bonne réponse!")
-                correct_answers += 1
+    # Soumission
+    if st.button("✅ Soumettre le quiz"):
+        score = 0
+        for i, q in enumerate(questions):
+            user_response = user_answers[i]
+            if user_response == q["answer"]:
+                st.success(f"Question {i+1} : Bonne réponse ✅")
+                score += 1
             else:
-                st.error(f"Mauvaise réponse. La bonne réponse est : {q['answer']}")
+                st.error(f"Question {i+1} : Mauvaise réponse ❌ — Réponse correcte : {q['answer']}")
 
-    if len(questions) > 0:
-        st.markdown(f"### Résultat : {correct_answers} / {len(questions)} bonnes réponses")
+        st.markdown("---")
+        st.markdown(f"### 🎯 Résultat final : **{score} / {len(questions)}** bonnes réponses")
+
+        if score == len(questions):
+            st.balloons()
 
 # 12. Cryptomonnaie
 with tabs[11]:
