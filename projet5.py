@@ -546,7 +546,7 @@ with tabs[10]:
         st.subheader(f"Question {i+1}")
         response = st.radio(q["question"], q["options"], key=f"q{i}")
 
-        if response:
+        if st.button(f"Valider la réponse à la question {i+1}", key=f"validate{i}"):
             if response == q["answer"]:
                 st.success("Bonne réponse!")
                 correct_answers += 1
